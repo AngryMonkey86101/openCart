@@ -1,0 +1,13 @@
+{
+  "name": "opencart",
+  "private": true,
+  "workspaces": ["web", "worker"],
+  "scripts": {
+    "dev:web": "npm run dev -w web",
+    "dev:worker": "npm run dev -w worker",
+    "build": "npm run build -w web",
+    "test": "npm test -w worker",
+    "typecheck": "npm run typecheck -w web && npm run typecheck -w worker",
+    "deploy": "npm run build && npm run deploy -w worker"
+  }
+}
