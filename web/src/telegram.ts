@@ -11,6 +11,7 @@ interface WebApp {
   openTelegramLink(url: string): void;
   showConfirm(message: string, callback: (ok: boolean) => void): void;
   requestWriteAccess?(callback: (allowed: boolean) => void): void;
+  BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   HapticFeedback?: {
     impactOccurred(style: "light" | "medium"): void;
     notificationOccurred(type: "success" | "warning" | "error"): void;
@@ -48,6 +49,36 @@ export function shareLink(url: string, text: string) {
   const share = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
   if (tg?.initData) tg.openTelegramLink(share);
   else window.open(share, "_blank");
+}
+
+/** Системная кнопка «Назад» Telegram на время экрана; возвращает функцию, которая её убирает. */
+export function showBackButton(onBack: () => void): () => void {
+  const bb = tg?.BackButton;
+  if (!bb) return () => {};
+  bb.onClick(onBack);
+  bb.show();
+  return () => {
+    bb.offClick(onBack);
+    bb.hide();
+  };
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Старые webview без Clipboard API: копируем через скрытое поле.
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.position = "fixed";
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    el.select();
+    const ok = document.execCommand("copy");
+    el.remove();
+    return ok;
+  }
 }
 
 /** Код приглашения: из ссылки бота (?join=) или из прямой ссылки на Mini App (startapp). */

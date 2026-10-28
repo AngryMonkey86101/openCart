@@ -16,6 +16,8 @@
   --c-on-accent-soft: #2f5833;
   --c-danger: #c2412d;
   --c-warning: #d98a1c;
+  --c-qr: #2f5833;
+  --c-qr-bg: #ffffff;
   --shadow-card: 0 2px 10px rgba(30, 42, 31, 0.08);
   --shadow-button: 0 4px 12px rgba(59, 107, 63, 0.25);
 
@@ -52,6 +54,8 @@
   --c-on-accent-soft: #a9dca3;
   --c-danger: #ff8a75;
   --c-warning: #f0b45a;
+  --c-qr: #2f5833;
+  --c-qr-bg: #ffffff;
   --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);
   --shadow-button: 0 4px 12px rgba(0, 0, 0, 0.35);
 
@@ -314,3 +318,88 @@ select.chip { padding-right: var(--space-2); text-overflow: ellipsis; }
 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--c-primary); }
 .dot.done { background: var(--c-muted); }
 .dot.undone { background: var(--c-warning); }
+
+/* ---------- Приглашение по QR-коду (как «Поделиться профилем» в Telegram) ---------- */
+.invite {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-header);
+  color: var(--c-on-header);
+  padding: var(--space-6) var(--space-4) calc(var(--space-5) + env(safe-area-inset-bottom));
+  animation: invite-in 0.2s ease-out;
+}
+/* Те же декоративные круги, что и в шапке, только крупнее. */
+.invite::before,
+.invite::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  background: var(--c-header-shape);
+  pointer-events: none;
+}
+.invite::before { width: 160px; height: 160px; top: -60px; right: -50px; }
+.invite::after { width: 280px; height: 280px; left: -140px; bottom: -90px; opacity: 0.6; }
+.invite > * { position: relative; z-index: 1; width: 100%; max-width: 360px; margin-left: auto; margin-right: auto; }
+@keyframes invite-in { from { opacity: 0; transform: scale(1.03); } }
+
+.invite .invite-close { position: absolute; top: var(--space-2); right: var(--space-2); left: auto; width: 40px; color: var(--c-on-header); }
+/* В Telegram есть системная кнопка «Назад», крестик нужен только без неё. */
+.in-telegram .invite-close { display: none; }
+
+.invite-body { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-top: 44px; }
+
+.qr-card {
+  position: relative;
+  background: var(--c-qr-bg);
+  border-radius: var(--radius-sheet);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 52px var(--space-6) var(--space-5);
+  text-align: center;
+}
+/* Круг с логотипом наезжает на верхний край карточки, как аватар в Telegram. */
+.qr-badge {
+  position: absolute;
+  top: -44px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--c-qr);
+  border: 4px solid var(--c-qr-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qr-badge .logo,
+.qr-logo {
+  background: var(--c-qr);
+  -webkit-mask: url(/icon.svg) center / contain no-repeat;
+  mask: url(/icon.svg) center / contain no-repeat;
+}
+.qr-badge .logo { width: 44px; height: 44px; background: var(--c-qr-bg); }
+
+.qr { position: relative; }
+.qr svg { display: block; width: 100%; height: auto; }
+.qr-dots { fill: var(--c-qr); }
+.qr-ring { fill: none; stroke: var(--c-qr); stroke-width: 1; }
+.qr-eye { fill: var(--c-qr); }
+.qr-logo { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+
+.qr-name {
+  margin: var(--space-4) 0 0;
+  color: var(--c-qr);
+  font-size: 20px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.invite-hint { margin: var(--space-5) 0 0; text-align: center; font-size: 14px; font-weight: 600; opacity: 0.8; }
+.invite-actions { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-5); }
+.invite-actions .outline { background: var(--c-surface); border-color: var(--c-surface); }

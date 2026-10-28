@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { InviteQr } from "./InviteQr";
 import { api, type Family, type Item, type ListEvent, type Member, type Notifications } from "./api";
-import { confirm, haptic, joinCode, notifyHaptic, requestWriteAccess, shareLink, tg } from "./telegram";
+import { confirm, haptic, joinCode, notifyHaptic, requestWriteAccess, tg } from "./telegram";
 
 const POLL_MS = 4000;
 const LAST_FAMILY_KEY = "opencart:lastFamily";
@@ -142,6 +143,8 @@ function ShoppingList({
   const [items, setItems] = useState<Item[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [showMembers, setShowMembers] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const closeInvite = useCallback(() => setShowInvite(false), []);
   const [news, setNews] = useState<ListEvent[]>([]);
   // Последнее событие, уже полученное с сервера; null — ещё не загружали.
   const fetchedUpTo = useRef<number | null>(null);
@@ -223,10 +226,6 @@ function ShoppingList({
     onNotificationsChange({ ...notifications, enabled });
   }
 
-  function invite() {
-    shareLink(family.inviteLink, `Присоединяйся к нашему списку покупок «${family.name}»`);
-  }
-
   const todo = items?.filter((i) => !i.done) ?? [];
   const done = items?.filter((i) => i.done) ?? [];
 
@@ -241,7 +240,7 @@ function ShoppingList({
           <button className="chip" onClick={() => setShowMembers((v) => !v)} aria-expanded={showMembers}>
             👥 Участники · {members.length || family.memberCount}
           </button>
-          <button className="chip" onClick={invite}>
+          <button className="chip" onClick={() => setShowInvite(true)}>
             Пригласить
           </button>
           {notifications.available && (
@@ -330,6 +329,7 @@ function ShoppingList({
         </button>
       )}
       </main>
+      {showInvite && <InviteQr family={family} onClose={closeInvite} />}
     </div>
   );
 }
