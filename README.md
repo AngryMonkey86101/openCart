@@ -61,3 +61,15 @@ npm test                 # тесты API и проверки initData
 
 Вне Telegram приложение покажет подсказку «Откройте через бота» — `initData` есть только внутри Telegram.
 Для проверки на телефоне без VPS удобно поднять туннель до `localhost:3000` и указать его адрес в `WEBAPP_URL`.
+
+### Бот на Cloudflare, если хостинг не пропускает Telegram к серверу
+
+Если `getWebhookInfo` показывает `Connection timed out`, сообщения боту до VPS не доходят. Тогда бот можно
+вынести в бесплатный Cloudflare Worker (`bot-relay/worker.js`): он отвечает кнопкой, которая открывает
+приложение на VPS. Пользователи к Cloudflare не обращаются, туда ходит только Telegram.
+
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → Create → Worker → Deploy, затем Edit code:
+   вставить содержимое `bot-relay/worker.js`, Deploy.
+2. Settings → Variables and Secrets: `WEBAPP_URL` = `https://<домен>`, `WEBHOOK_SECRET` = то же, что в `.env`.
+3. Направить вебхук на Worker: открыть в браузере
+   `https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<адрес worker>.workers.dev&secret_token=<WEBHOOK_SECRET>`.
