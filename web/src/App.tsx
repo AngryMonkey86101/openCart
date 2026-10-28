@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Family, type Item } from "./api";
+import { api, type Family, type Item, type Member } from "./api";
 import { confirm, haptic, joinCode, shareLink, tg } from "./telegram";
 
 const POLL_MS = 4000;
@@ -108,16 +108,20 @@ function ShoppingList({
   onCreateNew: () => void;
 }) {
   const [items, setItems] = useState<Item[] | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [showMembers, setShowMembers] = useState(false);
   const [title, setTitle] = useState("");
   const [qty, setQty] = useState("");
 
   const refresh = useCallback(async () => {
-    const { items } = await api.items(family.id);
+    const [{ items }, { members }] = await Promise.all([api.items(family.id), api.members(family.id)]);
     setItems(items);
+    setMembers(members);
   }, [family.id]);
 
   useEffect(() => {
     setItems(null);
+    setMembers([]);
     refresh();
     // Простой «реалтайм»: опрашиваем сервер, пока приложение на экране.
     const timer = setInterval(() => {
@@ -166,24 +170,49 @@ function ShoppingList({
   return (
     <div className="app">
       <header>
-        {families.length > 1 ? (
-          <select
-            value={family.id}
-            onChange={(e) => (e.target.value === "__new" ? onCreateNew() : onSwitch(e.target.value))}
-          >
-            {families.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-            <option value="__new">+ Новый список</option>
-          </select>
-        ) : (
-          <h1>{family.name}</h1>
+        <h1 className="list-title">{family.name}</h1>
+        <div className="header-actions">
+          <button className="secondary" onClick={() => setShowMembers((v) => !v)} aria-expanded={showMembers}>
+            👥 Участники · {members.length || family.memberCount}
+          </button>
+          <button className="secondary" onClick={invite}>
+            Пригласить
+          </button>
+          {families.length > 1 && (
+            <select
+              className="secondary"
+              value={family.id}
+              onChange={(e) => (e.target.value === "__new" ? onCreateNew() : onSwitch(e.target.value))}
+              aria-label="Другой список"
+            >
+              {families.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+              <option value="__new">+ Новый список</option>
+            </select>
+          )}
+        </div>
+        {showMembers && (
+          <div className="members">
+            <p className="hint small">Все участники могут добавлять товары и отмечать купленное.</p>
+            <ul>
+              {members.map((m) => (
+                <li key={m.id}>
+                  <span className="avatar" aria-hidden="true">
+                    {m.firstName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="name">
+                    {m.firstName}
+                    {m.username && <span className="meta"> @{m.username}</span>}
+                  </span>
+                  {m.isOwner && <span className="qty-badge">создатель</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
-        <button className="secondary" onClick={invite}>
-          👪 Пригласить{family.memberCount > 1 ? ` (${family.memberCount})` : ""}
-        </button>
       </header>
 
       <form className="add" onSubmit={add}>

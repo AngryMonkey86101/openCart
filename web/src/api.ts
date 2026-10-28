@@ -8,6 +8,13 @@ export interface Family {
   memberCount: number;
 }
 
+export interface Member {
+  id: number;
+  firstName: string;
+  username: string | null;
+  isOwner: boolean;
+}
+
 export interface Item {
   id: number;
   title: string;
@@ -36,6 +43,7 @@ export const api = {
   me: () => request<{ families: Family[] }>("GET", "/me"),
   createFamily: (name: string) => request<{ id: string }>("POST", "/families", { name }),
   joinFamily: (code: string) => request<{ id: string }>("POST", "/families/join", { code }),
+  members: (familyId: string) => request<{ members: Member[] }>("GET", `/families/${familyId}/members`),
   items: (familyId: string) => request<{ items: Item[] }>("GET", `/families/${familyId}/items`),
   addItem: (familyId: string, title: string, qty?: string) =>
     request<{ id: number }>("POST", `/families/${familyId}/items`, { title, qty }),

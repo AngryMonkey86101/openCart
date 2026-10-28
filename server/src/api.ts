@@ -115,6 +115,23 @@ async function route(request: Request, db: DB, config: Config, user: TelegramUse
     return json({ id: family.id });
   }
 
+  // GET /api/families/:id/members — все участники могут отмечать покупки
+  if (method === "GET" && parts[0] === "families" && parts[2] === "members") {
+    requireMember(db, parts[1], user.id);
+    const members = db
+      .prepare(
+        `SELECT u.id, u.first_name AS firstName, u.username, m.joined_at AS joinedAt,
+                u.id = f.created_by AS isOwner
+           FROM members m
+           JOIN users u ON u.id = m.user_id
+           JOIN families f ON f.id = m.family_id
+          WHERE m.family_id = ?
+          ORDER BY m.joined_at`,
+      )
+      .all(parts[1]) as { isOwner: number }[];
+    return json({ members: members.map((m) => ({ ...m, isOwner: Boolean(m.isOwner) })) });
+  }
+
   // GET /api/families/:id/items
   if (method === "GET" && parts[0] === "families" && parts[2] === "items") {
     requireMember(db, parts[1], user.id);

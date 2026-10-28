@@ -58,6 +58,11 @@ describe("API списка покупок", () => {
     // До приглашения папа список не видит.
     expect((await call(dad, "GET", `/api/families/${created.id}/items`)).status).toBe(404);
     await call(dad, "POST", "/api/families/join", { code: me.families[0].inviteCode });
+    const { data: people } = await call(dad, "GET", `/api/families/${created.id}/members`);
+    expect(people.members).toMatchObject([
+      { id: 1, firstName: "Мама", isOwner: true },
+      { id: 2, firstName: "Папа", isOwner: false },
+    ]);
 
     const { data: item } = await call(mom, "POST", `/api/families/${created.id}/items`, { title: "Молоко", qty: "2 л" });
     await call(dad, "PATCH", `/api/items/${item.id}`, { done: true });
