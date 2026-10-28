@@ -8,8 +8,14 @@ export async function callBot(config: Config, method: string, payload: unknown):
   });
 }
 
+/**
+ * Прямая ссылка на Mini App (startapp) работает без участия сервера: Telegram сам
+ * открывает приложение и передаёт код в initData. Ссылка на бота (start) требует вебхука.
+ */
 export function inviteLink(config: Config, code: string): string {
-  return `https://t.me/${config.botUsername}?start=${code}`;
+  return config.botAppName
+    ? `https://t.me/${config.botUsername}/${config.botAppName}?startapp=${code}`
+    : `https://t.me/${config.botUsername}?start=${code}`;
 }
 
 export function openAppButton(config: Config, text: string, join?: string) {

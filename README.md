@@ -27,8 +27,22 @@ Telegram Mini App: один список на всю семью. Создаёт�
    cp .env.example .env   # заполнить DOMAIN, WEBAPP_URL, BOT_TOKEN, BOT_USERNAME, WEBHOOK_SECRET
    docker compose up -d --build
    ```
-4. Готово: при старте сервер сам регистрирует вебхук и кнопку меню бота. Проверить: `docker compose logs app` —
+4. В [@BotFather](https://t.me/BotFather): `/newapp` → выбрать бота → указать URL `https://<домен>` и короткое имя
+   (например `list`). Вписать это имя в `BOT_APP_NAME` и перезапустить: `docker compose up -d`.
+   Тогда приглашения открывают приложение сразу, без ответа бота.
+5. При старте сервер пробует сам зарегистрировать вебхук и кнопку меню. Проверить: `docker compose logs app` —
    там должна быть строка «Вебхук бота: …». Напишите боту `/start`.
+
+### Если хостинг блокирует Telegram
+
+В логе будет «Не удалось настроить бота: fetch failed». Приложение при этом работает: телефон открывает его
+напрямую с вашего сервера, а бот отвечает прямо в ответе на вебхук, без исходящих запросов. Нужно только один раз
+настроить бота вручную, с любого устройства, где открывается Telegram:
+
+- кнопка меню: в BotFather `/setmenubutton` → бот → URL `https://<домен>`;
+- вебхук (чтобы бот отвечал на `/start`): открыть в браузере
+  `https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<домен>/bot/webhook&secret_token=<WEBHOOK_SECRET>`.
+  Ответ `"ok":true` значит, что всё готово.
 
 Обновление: `git pull && docker compose up -d --build`. Резервная копия базы:
 `docker compose exec app node -e "require('better-sqlite3')('/data/opencart.db').backup('/data/backup.db')"`,

@@ -1,6 +1,6 @@
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
-import { callBot, openAppButton } from "./telegram.js";
+import { openAppButton } from "./telegram.js";
 
 interface Update {
   message?: {
@@ -8,6 +8,16 @@ interface Update {
     from?: { id: number; first_name: string; username?: string };
     text?: string;
   };
+}
+
+/**
+ * Отвечаем прямо в ответе на вебхук: так серверу не нужен исходящий доступ к api.telegram.org,
+ * который некоторые хостинги блокируют.
+ */
+function reply(chatId: number, text: string, replyMarkup: unknown): Response {
+  return new Response(JSON.stringify({ method: "sendMessage", chat_id: chatId, text, reply_markup: replyMarkup }), {
+    headers: { "content-type": "application/json" },
+  });
 }
 
 export async function handleWebhook(request: Request, db: DB, config: Config): Promise<Response> {
@@ -30,19 +40,17 @@ export async function handleWebhook(request: Request, db: DB, config: Config): P
       | { name: string }
       | undefined;
     if (family) {
-      await callBot(config, "sendMessage", {
-        chat_id: msg.chat.id,
-        text: `Вас пригласили в список «${family.name}». Откройте его, чтобы присоединиться.`,
-        reply_markup: openAppButton(config, "Открыть список", payload),
-      });
-      return new Response("ok");
+      return reply(
+        msg.chat.id,
+        `Вас пригласили в список «${family.name}». Откройте его, чтобы присоединиться.`,
+        openAppButton(config, "Открыть список", payload),
+      );
     }
   }
 
-  await callBot(config, "sendMessage", {
-    chat_id: msg.chat.id,
-    text: "Привет! Здесь общий список покупок для всей семьи. Откройте приложение, создайте список и пригласите близких.",
-    reply_markup: openAppButton(config, "Открыть список покупок"),
-  });
-  return new Response("ok");
+  return reply(
+    msg.chat.id,
+    "Привет! Здесь общий список покупок для всей семьи. Откройте приложение, создайте список и пригласите близких.",
+    openAppButton(config, "Открыть список покупок"),
+  );
 }

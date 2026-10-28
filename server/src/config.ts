@@ -5,6 +5,8 @@ export interface Config {
   webappUrl: string;
   /** Имя бота без @, нужно для ссылок-приглашений. */
   botUsername: string;
+  /** Короткое имя Mini App из BotFather (/newapp). Если задано, приглашения открывают приложение сразу. */
+  botAppName?: string;
   port: number;
   databasePath: string;
   /** Каталог с собранным Mini App (web/dist). */
@@ -23,6 +25,7 @@ export function loadConfig(): Config {
     webhookSecret: required("WEBHOOK_SECRET"),
     webappUrl: required("WEBAPP_URL").replace(/\/+$/, ""),
     botUsername: required("BOT_USERNAME").replace(/^@/, ""),
+    botAppName: process.env.BOT_APP_NAME || undefined,
     port: Number(process.env.PORT ?? 3000),
     databasePath: process.env.DATABASE_PATH ?? "data/opencart.db",
     staticDir: process.env.STATIC_DIR ?? "../web/dist",

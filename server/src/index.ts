@@ -39,7 +39,12 @@ server.listen(config.port, () => {
   console.log(`openCart слушает порт ${config.port}`);
   setupBot(config)
     .then(() => console.log(`Вебхук бота: ${config.webappUrl}/bot/webhook`))
-    .catch((err) => console.error("Не удалось настроить бота:", err.message));
+    .catch((err) =>
+      console.error(
+        `Не удалось настроить бота: ${err.message}. Если сервер не может обратиться к api.telegram.org,`,
+        "приложение всё равно работает; вебхук и Mini App настраиваются в BotFather вручную (см. README).",
+      ),
+    );
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

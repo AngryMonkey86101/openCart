@@ -82,6 +82,33 @@ describe("вебхук и статика", () => {
     expect(res.status).toBe(403);
   });
 
+  it("бот отвечает прямо в ответе на вебхук, с приглашением в список", async () => {
+    const { data: created } = await call(mom, "POST", "/api/families", { name: "Дом" });
+    const { data: me } = await call(mom, "GET", "/api/me");
+    const update = { message: { chat: { id: 2, type: "private" }, from: { id: 2, first_name: "Папа" }, text: `/start ${me.families[0].inviteCode}` } };
+    const res = await app(
+      new Request("http://localhost/bot/webhook", {
+        method: "POST",
+        headers: { "X-Telegram-Bot-Api-Secret-Token": "secret" },
+        body: JSON.stringify(update),
+      }),
+    );
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({ method: "sendMessage", chat_id: 2 });
+    expect(body.text).toContain("«Дом»");
+    expect(body.reply_markup.inline_keyboard[0][0].web_app.url).toBe(
+      `https://list.example.ru/?join=${me.families[0].inviteCode}`,
+    );
+    expect(created.id).toBeTruthy();
+  });
+
+  it("с BOT_APP_NAME приглашение ведёт прямо в Mini App", async () => {
+    app = createApp(openDatabase(":memory:"), { ...config, botAppName: "list" });
+    await call(mom, "POST", "/api/families", { name: "Дом" });
+    const { data: me } = await call(mom, "GET", "/api/me");
+    expect(me.families[0].inviteLink).toBe(`https://t.me/family_list_bot/list?startapp=${me.families[0].inviteCode}`);
+  });
+
   it("неизвестный путь отдаёт index.html, выйти за каталог нельзя", async () => {
     for (const path of ["/", "/some/page", "/../package.json"]) {
       const res = await app(new Request(`http://localhost${path}`));
