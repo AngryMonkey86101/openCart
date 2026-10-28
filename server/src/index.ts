@@ -3,11 +3,13 @@ import { Readable } from "node:stream";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { openDatabase } from "./db.js";
+import { Notifier } from "./notifier.js";
 import { setupBot } from "./telegram.js";
 
 const config = loadConfig();
 const db = openDatabase(config.databasePath);
-const app = createApp(db, config);
+const notifier = new Notifier(db, config);
+const app = createApp(db, config, notifier);
 
 function toRequest(req: IncomingMessage): Request {
   const url = `http://${req.headers.host ?? "localhost"}${req.url ?? "/"}`;
@@ -37,6 +39,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(config.port, () => {
   console.log(`openCart слушает порт ${config.port}`);
+  console.log(notifier.enabled ? "Оповещения в Telegram: через посредника" : "Оповещения в Telegram выключены (нет NOTIFY_RELAY_URL)");
   setupBot(config)
     .then(() => console.log(`Вебхук бота: ${config.webappUrl}/bot/webhook`))
     .catch((err) =>
@@ -48,5 +51,11 @@ server.listen(config.port, () => {
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => server.close(() => (db.close(), process.exit(0))));
+  process.on(signal, () =>
+    server.close(async () => {
+      await notifier.flushAll();
+      db.close();
+      process.exit(0);
+    }),
+  );
 }

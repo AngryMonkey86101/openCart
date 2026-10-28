@@ -2,7 +2,14 @@ import { randomUUID, getRandomValues } from "node:crypto";
 import { validateInitData, type TelegramUser } from "./auth.js";
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
+import type { EventType, Notifier } from "./notifier.js";
 import { inviteLink } from "./telegram.js";
+
+interface Ctx {
+  db: DB;
+  config: Config;
+  notifier: Notifier;
+}
 
 class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -60,18 +67,18 @@ function itemFamily(db: DB, itemId: number): string {
 
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-type EventType = "added" | "done" | "undone";
-
 /** Записывает событие для оповещений остальных участников; старше 30 дней — удаляет. */
-function logEvent(db: DB, familyId: string, actorId: number, type: EventType, itemTitle: string) {
+function logEvent(ctx: Ctx, familyId: string, actor: TelegramUser, type: EventType, itemTitle: string) {
+  const { db } = ctx;
   const ts = now();
   db.prepare("INSERT INTO events (family_id, actor_id, type, item_title, created_at) VALUES (?, ?, ?, ?, ?)").run(
     familyId,
-    actorId,
+    actor.id,
     type,
     itemTitle,
     ts,
   );
+  ctx.notifier.push(familyId, { actorId: actor.id, actorName: actor.first_name, type, itemTitle });
   db.prepare("DELETE FROM events WHERE family_id = ? AND created_at < ?").run(familyId, ts - EVENT_TTL_MS);
 }
 
@@ -87,14 +94,28 @@ function listFamilies(db: DB, config: Config, userId: number) {
   return rows.map((f) => ({ ...f, inviteLink: inviteLink(config, f.inviteCode) }));
 }
 
-async function route(request: Request, db: DB, config: Config, user: TelegramUser): Promise<Response> {
+async function route(request: Request, ctx: Ctx, user: TelegramUser): Promise<Response> {
+  const { db, config, notifier } = ctx;
   const url = new URL(request.url);
   const parts = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
   const method = request.method;
 
   // GET /api/me
-  if (method === "GET" && parts[0] === "me") {
-    return json({ user, families: listFamilies(db, config, user.id) });
+  if (method === "GET" && parts[0] === "me" && parts.length === 1) {
+    const notify = db.prepare("SELECT notify FROM users WHERE id = ?").pluck().get(user.id) as number;
+    return json({
+      user,
+      families: listFamilies(db, config, user.id),
+      notifications: { available: notifier.enabled, enabled: Boolean(notify) },
+    });
+  }
+
+  // POST /api/me/notifications  { enabled } — оповещения сообщениями в Telegram
+  if (method === "POST" && parts[0] === "me" && parts[1] === "notifications") {
+    const body = await readBody<{ enabled?: unknown }>(request);
+    if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled must be boolean");
+    db.prepare("UPDATE users SET notify = ? WHERE id = ?").run(body.enabled ? 1 : 0, user.id);
+    return json({ enabled: body.enabled });
   }
 
   // POST /api/families  { name }
@@ -195,7 +216,7 @@ async function route(request: Request, db: DB, config: Config, user: TelegramUse
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(parts[1], title, cleanText(body.qty, 30), user.id, ts, ts);
-    logEvent(db, parts[1], user.id, "added", title);
+    logEvent(ctx, parts[1], user, "added", title);
     return json({ id: Number(result.lastInsertRowid) }, 201);
   }
 
@@ -215,7 +236,7 @@ async function route(request: Request, db: DB, config: Config, user: TelegramUse
     const ts = now();
     const before = db.prepare("SELECT title, done FROM items WHERE id = ?").get(itemId) as { title: string; done: number };
     if (typeof body.done === "boolean" && body.done !== Boolean(before.done)) {
-      logEvent(db, familyId, user.id, body.done ? "done" : "undone", before.title);
+      logEvent(ctx, familyId, user, body.done ? "done" : "undone", before.title);
     }
     if (typeof body.done === "boolean") {
       db.prepare("UPDATE items SET done = ?, done_by = ?, updated_at = ? WHERE id = ?").run(
@@ -248,10 +269,10 @@ async function route(request: Request, db: DB, config: Config, user: TelegramUse
   throw new HttpError(404, "not found");
 }
 
-export async function handleApi(request: Request, db: DB, config: Config): Promise<Response> {
+export async function handleApi(request: Request, ctx: Ctx): Promise<Response> {
   try {
-    const user = await authenticate(request, db, config);
-    return await route(request, db, config, user);
+    const user = await authenticate(request, ctx.db, ctx.config);
+    return await route(request, ctx, user);
   } catch (err) {
     if (err instanceof HttpError) return json({ error: err.message }, err.status);
     console.error(err);

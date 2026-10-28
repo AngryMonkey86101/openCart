@@ -4,6 +4,7 @@ import { handleApi } from "./api.js";
 import { handleWebhook } from "./bot.js";
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
+import { Notifier } from "./notifier.js";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -35,10 +36,10 @@ async function serveStatic(pathname: string, config: Config): Promise<Response> 
   return new Response(index, { headers: { "content-type": CONTENT_TYPES[".html"], "cache-control": "no-cache" } });
 }
 
-export function createApp(db: DB, config: Config) {
+export function createApp(db: DB, config: Config, notifier = new Notifier(db, config)) {
   return async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
-    if (pathname.startsWith("/api/")) return handleApi(request, db, config);
+    if (pathname.startsWith("/api/")) return handleApi(request, { db, config, notifier });
     if (pathname === "/bot/webhook" && request.method === "POST") return handleWebhook(request, db, config);
     if (pathname === "/healthz") return new Response("ok");
     return serveStatic(pathname, config);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { api, type Family, type Item, type ListEvent, type Member } from "./api";
-import { confirm, haptic, joinCode, notifyHaptic, shareLink, tg } from "./telegram";
+import { api, type Family, type Item, type ListEvent, type Member, type Notifications } from "./api";
+import { confirm, haptic, joinCode, notifyHaptic, requestWriteAccess, shareLink, tg } from "./telegram";
 
 const POLL_MS = 4000;
 const LAST_FAMILY_KEY = "opencart:lastFamily";
@@ -26,11 +26,13 @@ function writeNumber(key: string, value: number) {
 export function App() {
   const [families, setFamilies] = useState<Family[] | null>(null);
   const [familyId, setFamilyId] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notifications>({ available: false, enabled: false });
   const [error, setError] = useState<string | null>(null);
 
   const loadFamilies = useCallback(async (prefer?: string) => {
-    const { families } = await api.me();
+    const { families, notifications } = await api.me();
     setFamilies(families);
+    setNotifications(notifications);
     const saved = prefer ?? localStorage.getItem(LAST_FAMILY_KEY);
     setFamilyId(families.find((f) => f.id === saved)?.id ?? families[0]?.id ?? null);
   }, []);
@@ -73,6 +75,8 @@ export function App() {
       families={families}
       onSwitch={setFamilyId}
       onCreateNew={() => setFamilyId(null)}
+      notifications={notifications}
+      onNotificationsChange={setNotifications}
     />
   );
 }
@@ -119,11 +123,15 @@ function ShoppingList({
   families,
   onSwitch,
   onCreateNew,
+  notifications,
+  onNotificationsChange,
 }: {
   family: Family;
   families: Family[];
   onSwitch: (id: string) => void;
   onCreateNew: () => void;
+  notifications: Notifications;
+  onNotificationsChange: (n: Notifications) => void;
 }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
@@ -202,6 +210,13 @@ function ShoppingList({
     await refresh();
   }
 
+  async function toggleNotifications() {
+    const enable = !notifications.enabled;
+    if (enable && !(await requestWriteAccess())) return;
+    const { enabled } = await api.setNotifications(enable);
+    onNotificationsChange({ ...notifications, enabled });
+  }
+
   function invite() {
     shareLink(family.inviteLink, `Присоединяйся к нашему списку покупок «${family.name}»`);
   }
@@ -220,6 +235,11 @@ function ShoppingList({
           <button className="secondary" onClick={invite}>
             Пригласить
           </button>
+          {notifications.available && (
+            <button className="secondary" onClick={toggleNotifications} aria-pressed={notifications.enabled}>
+              {notifications.enabled ? "🔔 Оповещения вкл." : "🔕 Оповещения в Telegram"}
+            </button>
+          )}
           {families.length > 1 && (
             <select
               className="secondary"

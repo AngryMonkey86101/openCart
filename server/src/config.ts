@@ -7,6 +7,9 @@ export interface Config {
   botUsername: string;
   /** Короткое имя Mini App из BotFather (/newapp). Если задано, приглашения открывают приложение сразу. */
   botAppName?: string;
+  /** Адрес посредника для оповещений в Telegram (bot-relay/worker.js) и общий секрет с ним. */
+  notifyRelayUrl?: string;
+  notifyRelaySecret?: string;
   port: number;
   databasePath: string;
   /** Каталог с собранным Mini App (web/dist). */
@@ -26,6 +29,8 @@ export function loadConfig(): Config {
     webappUrl: required("WEBAPP_URL").replace(/\/+$/, ""),
     botUsername: required("BOT_USERNAME").replace(/^@/, ""),
     botAppName: process.env.BOT_APP_NAME || undefined,
+    notifyRelayUrl: process.env.NOTIFY_RELAY_URL || undefined,
+    notifyRelaySecret: process.env.NOTIFY_RELAY_SECRET || undefined,
     port: Number(process.env.PORT ?? 3000),
     databasePath: process.env.DATABASE_PATH ?? "data/opencart.db",
     staticDir: process.env.STATIC_DIR ?? "../web/dist",

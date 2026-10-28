@@ -8,6 +8,12 @@ export interface Family {
   memberCount: number;
 }
 
+export interface Notifications {
+  /** На сервере настроен посредник для сообщений в Telegram. */
+  available: boolean;
+  enabled: boolean;
+}
+
 export interface Member {
   id: number;
   firstName: string;
@@ -48,7 +54,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  me: () => request<{ families: Family[] }>("GET", "/me"),
+  me: () => request<{ families: Family[]; notifications: Notifications }>("GET", "/me"),
+  setNotifications: (enabled: boolean) => request<{ enabled: boolean }>("POST", "/me/notifications", { enabled }),
   createFamily: (name: string) => request<{ id: string }>("POST", "/families", { name }),
   joinFamily: (code: string) => request<{ id: string }>("POST", "/families/join", { code }),
   members: (familyId: string) => request<{ members: Member[] }>("GET", `/families/${familyId}/members`),

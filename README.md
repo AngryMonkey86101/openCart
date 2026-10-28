@@ -62,14 +62,22 @@ npm test                 # тесты API и проверки initData
 Вне Telegram приложение покажет подсказку «Откройте через бота» — `initData` есть только внутри Telegram.
 Для проверки на телефоне без VPS удобно поднять туннель до `localhost:3000` и указать его адрес в `WEBAPP_URL`.
 
-### Бот на Cloudflare, если хостинг не пропускает Telegram к серверу
+### Посредник на Cloudflare: оповещения в Telegram и ответ на /start
 
-Если `getWebhookInfo` показывает `Connection timed out`, сообщения боту до VPS не доходят. Тогда бот можно
-вынести в бесплатный Cloudflare Worker (`bot-relay/worker.js`): он отвечает кнопкой, которая открывает
-приложение на VPS. Пользователи к Cloudflare не обращаются, туда ходит только Telegram.
+Если хостинг не пускает сервер к Telegram, сообщения от бота отправляет бесплатный Cloudflare Worker
+(`bot-relay/worker.js`). Сервер передаёт ему оповещения коротким запросом, а Worker отправляет их через бота.
+Пользователи к Cloudflare не обращаются.
 
 1. [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → Create → Worker → Deploy, затем Edit code:
    вставить содержимое `bot-relay/worker.js`, Deploy.
-2. Settings → Variables and Secrets: `WEBAPP_URL` = `https://<домен>`, `WEBHOOK_SECRET` = то же, что в `.env`.
-3. Направить вебхук на Worker: открыть в браузере
-   `https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<адрес worker>.workers.dev&secret_token=<WEBHOOK_SECRET>`.
+2. Settings → Variables and Secrets, тип Secret: `BOT_TOKEN` — токен бота, `RELAY_SECRET` — случайная строка
+   (`openssl rand -hex 32`).
+3. В `.env` на сервере: `NOTIFY_RELAY_URL=https://<адрес worker>.workers.dev` и `NOTIFY_RELAY_SECRET` — та же строка,
+   что `RELAY_SECRET`. Перезапустить: `docker compose up -d`. В логе появится «Оповещения в Telegram: через посредника».
+4. В приложении каждый участник нажимает «Оповещения в Telegram» и разрешает боту писать ему.
+
+Оповещения копятся 30 секунд и приходят одним сообщением; свои действия человеку не присылаются.
+
+Чтобы Worker ещё и отвечал на `/start`: добавить переменные `WEBAPP_URL` = `https://<домен>` и
+`WEBHOOK_SECRET` = то же, что в `.env`, и направить вебхук на Worker:
+`https://api.telegram.org/bot<BOT_TOKEN>/setWebhook?url=https://<адрес worker>.workers.dev&secret_token=<WEBHOOK_SECRET>`.

@@ -6,6 +6,7 @@ interface WebApp {
   expand(): void;
   openTelegramLink(url: string): void;
   showConfirm(message: string, callback: (ok: boolean) => void): void;
+  requestWriteAccess?(callback: (allowed: boolean) => void): void;
   HapticFeedback?: {
     impactOccurred(style: "light" | "medium"): void;
     notificationOccurred(type: "success" | "warning" | "error"): void;
@@ -26,6 +27,12 @@ export function haptic() {
 
 export function notifyHaptic() {
   tg?.HapticFeedback?.notificationOccurred("success");
+}
+
+/** Разрешение боту писать человеку в личку; без него оповещения в Telegram не дойдут. */
+export function requestWriteAccess(): Promise<boolean> {
+  if (!tg?.requestWriteAccess) return Promise.resolve(true);
+  return new Promise((resolve) => tg.requestWriteAccess!(resolve));
 }
 
 export function confirm(message: string): Promise<boolean> {

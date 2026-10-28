@@ -6,6 +6,7 @@ import { createApp } from "../src/app.js";
 import { signInitData } from "../src/auth.js";
 import type { Config } from "../src/config.js";
 import { openDatabase } from "../src/db.js";
+import { Notifier } from "../src/notifier.js";
 
 const staticDir = mkdtempSync(join(tmpdir(), "opencart-web-"));
 writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>app</title>");
@@ -91,6 +92,33 @@ describe("API списка покупок", () => {
     expect(forMom.events.map((e: any) => e.type)).toEqual(["done", "undone"]);
     expect((await events(mom, forMom.lastId)).data.events).toEqual([]);
     expect((await events(await auth(3, "Чужой"))).status).toBe(404);
+  });
+
+  it("оповещения в Telegram: одним сообщением, только согласившимся и не автору", async () => {
+    const relayConfig = { ...config, notifyRelayUrl: "https://relay.test", notifyRelaySecret: "x", botAppName: "list" };
+    const db = openDatabase(":memory:");
+    const sent: any[] = [];
+    const notifier = new Notifier(db, relayConfig, 60_000, async (messages) => void sent.push(...messages));
+    app = createApp(db, relayConfig, notifier);
+
+    const { data: created } = await call(mom, "POST", "/api/families", { name: "Дом" });
+    const { data: me } = await call(mom, "GET", "/api/me");
+    expect(me.notifications).toEqual({ available: true, enabled: false });
+    await call(dad, "POST", "/api/families/join", { code: me.families[0].inviteCode });
+    await call(mom, "POST", "/api/me/notifications", { enabled: true });
+    await call(dad, "POST", "/api/me/notifications", { enabled: true });
+
+    const { data: item } = await call(dad, "POST", `/api/families/${created.id}/items`, { title: "Молоко" });
+    await call(dad, "PATCH", `/api/items/${item.id}`, { done: true });
+    await notifier.flushAll();
+
+    expect(sent).toEqual([
+      {
+        chat_id: 1,
+        text: "🛒 Дом\nПапа добавил(а) «Молоко»\nПапа купил(а) «Молоко»",
+        reply_markup: { inline_keyboard: [[{ text: "Открыть список", url: "https://t.me/family_list_bot/list" }]] },
+      },
+    ]);
   });
 
   it("чужой товар нельзя удалить", async () => {
