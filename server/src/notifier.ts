@@ -74,7 +74,10 @@ export class Notifier {
       if (!lines.length) return [];
       return [{ chat_id: chatId, text: `🛒 ${family.name}\n${lines.join("\n")}`, reply_markup: button }];
     });
-    if (!messages.length) return;
+    if (!messages.length) {
+      console.log(`Оповещения для «${family.name}»: некому отправлять (никто, кроме автора, не включил оповещения)`);
+      return;
+    }
     try {
       await this.send(messages);
     } catch (err) {
@@ -89,6 +92,14 @@ export class Notifier {
       body: JSON.stringify({ messages }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Error(`relay ответил ${res.status}`);
+    if (!res.ok) throw new Error(`посредник ответил ${res.status}${res.status === 403 ? " (не совпадает RELAY_SECRET)" : ""}`);
+    // Ответ посредника: по строке на получателя, ошибки Telegram пишем в лог.
+    const { results = [] } = (await res.json().catch(() => ({}))) as {
+      results?: { chat_id: number; ok: boolean; error?: string }[];
+    };
+    for (const r of results) {
+      if (r.ok) console.log(`Оповещение отправлено пользователю ${r.chat_id}`);
+      else console.error(`Telegram не принял оповещение для ${r.chat_id}: ${r.error}`);
+    }
   }
 }

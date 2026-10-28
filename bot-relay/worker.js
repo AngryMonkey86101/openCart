@@ -16,7 +16,10 @@ async function notify(request, env) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(m),
-      }).then((r) => r.status),
+      })
+        .then((r) => r.json())
+        .then((r) => ({ chat_id: m.chat_id, ok: r.ok, error: r.ok ? undefined : r.description }))
+        .catch((e) => ({ chat_id: m.chat_id, ok: false, error: String(e) })),
     ),
   );
   return Response.json({ results });
