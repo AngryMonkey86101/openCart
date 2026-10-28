@@ -74,6 +74,25 @@ describe("API списка покупок", () => {
     expect((await call(mom, "GET", `/api/families/${created.id}/items`)).data.items).toEqual([]);
   });
 
+  it("оповещения: другие видят добавление, покупку и снятие отметки", async () => {
+    const { data: created } = await call(mom, "POST", "/api/families", { name: "Дом" });
+    const { data: me } = await call(mom, "GET", "/api/me");
+    await call(dad, "POST", "/api/families/join", { code: me.families[0].inviteCode });
+    const events = (who: string, after = 0) => call(who, "GET", `/api/families/${created.id}/events?after=${after}`);
+
+    const { data: item } = await call(mom, "POST", `/api/families/${created.id}/items`, { title: "Молоко" });
+    await call(dad, "PATCH", `/api/items/${item.id}`, { done: true });
+    await call(dad, "PATCH", `/api/items/${item.id}`, { done: true }); // повтор не пишется
+    await call(dad, "PATCH", `/api/items/${item.id}`, { done: false });
+
+    const { data: forDad } = await events(dad);
+    expect(forDad.events).toMatchObject([{ type: "added", actor: "Мама", itemTitle: "Молоко" }]);
+    const { data: forMom } = await events(mom);
+    expect(forMom.events.map((e: any) => e.type)).toEqual(["done", "undone"]);
+    expect((await events(mom, forMom.lastId)).data.events).toEqual([]);
+    expect((await events(await auth(3, "Чужой"))).status).toBe(404);
+  });
+
   it("чужой товар нельзя удалить", async () => {
     const { data: created } = await call(mom, "POST", "/api/families", { name: "Дом" });
     const { data: item } = await call(mom, "POST", `/api/families/${created.id}/items`, { title: "Хлеб" });

@@ -58,6 +58,23 @@ function itemFamily(db: DB, itemId: number): string {
   return row.family_id;
 }
 
+const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+type EventType = "added" | "done" | "undone";
+
+/** Записывает событие для оповещений остальных участников; старше 30 дней — удаляет. */
+function logEvent(db: DB, familyId: string, actorId: number, type: EventType, itemTitle: string) {
+  const ts = now();
+  db.prepare("INSERT INTO events (family_id, actor_id, type, item_title, created_at) VALUES (?, ?, ?, ?, ?)").run(
+    familyId,
+    actorId,
+    type,
+    itemTitle,
+    ts,
+  );
+  db.prepare("DELETE FROM events WHERE family_id = ? AND created_at < ?").run(familyId, ts - EVENT_TTL_MS);
+}
+
 function listFamilies(db: DB, config: Config, userId: number) {
   const rows = db
     .prepare(
@@ -132,6 +149,22 @@ async function route(request: Request, db: DB, config: Config, user: TelegramUse
     return json({ members: members.map((m) => ({ ...m, isOwner: Boolean(m.isOwner) })) });
   }
 
+  // GET /api/families/:id/events?after=<id> — изменения от других участников
+  if (method === "GET" && parts[0] === "families" && parts[2] === "events") {
+    requireMember(db, parts[1], user.id);
+    const after = Number(url.searchParams.get("after") ?? 0) || 0;
+    const events = db
+      .prepare(
+        `SELECT e.id, e.type, e.item_title AS itemTitle, e.created_at AS createdAt, u.first_name AS actor
+           FROM events e JOIN users u ON u.id = e.actor_id
+          WHERE e.family_id = ? AND e.id > ? AND e.actor_id != ?
+          ORDER BY e.id DESC LIMIT 50`,
+      )
+      .all(parts[1], after, user.id);
+    const last = db.prepare("SELECT MAX(id) FROM events WHERE family_id = ?").pluck().get(parts[1]) as number | null;
+    return json({ events: events.reverse(), lastId: last ?? 0 });
+  }
+
   // GET /api/families/:id/items
   if (method === "GET" && parts[0] === "families" && parts[2] === "items") {
     requireMember(db, parts[1], user.id);
@@ -162,6 +195,7 @@ async function route(request: Request, db: DB, config: Config, user: TelegramUse
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(parts[1], title, cleanText(body.qty, 30), user.id, ts, ts);
+    logEvent(db, parts[1], user.id, "added", title);
     return json({ id: Number(result.lastInsertRowid) }, 201);
   }
 
@@ -175,9 +209,14 @@ async function route(request: Request, db: DB, config: Config, user: TelegramUse
   // PATCH /api/items/:id  { done?, title?, qty? }
   if (method === "PATCH" && parts[0] === "items" && parts[1]) {
     const itemId = Number(parts[1]);
-    requireMember(db, itemFamily(db, itemId), user.id);
+    const familyId = itemFamily(db, itemId);
+    requireMember(db, familyId, user.id);
     const body = await readBody<{ done?: unknown; title?: unknown; qty?: unknown }>(request);
     const ts = now();
+    const before = db.prepare("SELECT title, done FROM items WHERE id = ?").get(itemId) as { title: string; done: number };
+    if (typeof body.done === "boolean" && body.done !== Boolean(before.done)) {
+      logEvent(db, familyId, user.id, body.done ? "done" : "undone", before.title);
+    }
     if (typeof body.done === "boolean") {
       db.prepare("UPDATE items SET done = ?, done_by = ?, updated_at = ? WHERE id = ?").run(
         body.done ? 1 : 0,

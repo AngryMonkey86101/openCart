@@ -6,7 +6,10 @@ interface WebApp {
   expand(): void;
   openTelegramLink(url: string): void;
   showConfirm(message: string, callback: (ok: boolean) => void): void;
-  HapticFeedback?: { impactOccurred(style: "light" | "medium"): void };
+  HapticFeedback?: {
+    impactOccurred(style: "light" | "medium"): void;
+    notificationOccurred(type: "success" | "warning" | "error"): void;
+  };
 }
 
 declare global {
@@ -19,6 +22,10 @@ export const tg: WebApp | undefined = window.Telegram?.WebApp;
 
 export function haptic() {
   tg?.HapticFeedback?.impactOccurred("light");
+}
+
+export function notifyHaptic() {
+  tg?.HapticFeedback?.notificationOccurred("success");
 }
 
 export function confirm(message: string): Promise<boolean> {

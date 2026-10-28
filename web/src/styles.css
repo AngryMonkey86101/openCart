@@ -99,3 +99,14 @@ button.icon { background: none; color: var(--hint); padding: 8px; }
 
 .section { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; color: var(--hint); font-size: 14px; }
 .new-list { display: block; margin: 32px auto 0; }
+
+.news { margin-bottom: 16px; padding: 12px; border-radius: 10px; background: var(--secondary-bg); }
+.news-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.news ul { list-style: none; margin: 0; padding: 0; }
+.news li { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 14px; }
+.news .text { overflow-wrap: anywhere; }
+.news .meta { color: var(--hint); }
+.news p { margin: 4px 0 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--button); }
+.dot.done { background: #34c759; }
+.dot.undone { background: #ff9500; }

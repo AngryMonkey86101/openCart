@@ -1,9 +1,27 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Family, type Item, type Member } from "./api";
-import { confirm, haptic, joinCode, shareLink, tg } from "./telegram";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { api, type Family, type Item, type ListEvent, type Member } from "./api";
+import { confirm, haptic, joinCode, notifyHaptic, shareLink, tg } from "./telegram";
 
 const POLL_MS = 4000;
 const LAST_FAMILY_KEY = "opencart:lastFamily";
+const seenKey = (familyId: string) => `opencart:seen:${familyId}`;
+
+function readNumber(key: string): number | null {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? null : Number(v);
+  } catch {
+    return null;
+  }
+}
+
+function writeNumber(key: string, value: number) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // Хранилище недоступно: оповещения просто покажутся ещё раз.
+  }
+}
 
 export function App() {
   const [families, setFamilies] = useState<Family[] | null>(null);
@@ -110,18 +128,42 @@ function ShoppingList({
   const [items, setItems] = useState<Item[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [showMembers, setShowMembers] = useState(false);
+  const [news, setNews] = useState<ListEvent[]>([]);
+  // Последнее событие, уже полученное с сервера; null — ещё не загружали.
+  const fetchedUpTo = useRef<number | null>(null);
   const [title, setTitle] = useState("");
   const [qty, setQty] = useState("");
 
   const refresh = useCallback(async () => {
-    const [{ items }, { members }] = await Promise.all([api.items(family.id), api.members(family.id)]);
+    const firstLoad = fetchedUpTo.current === null;
+    const after = fetchedUpTo.current ?? readNumber(seenKey(family.id));
+    const [{ items }, { members }, feed] = await Promise.all([
+      api.items(family.id),
+      api.members(family.id),
+      api.events(family.id, after ?? 0),
+    ]);
     setItems(items);
     setMembers(members);
+    fetchedUpTo.current = Math.max(feed.lastId, after ?? 0);
+    if (after === null) {
+      // Первый запуск на этом устройстве: старые события не показываем.
+      writeNumber(seenKey(family.id), feed.lastId);
+    } else if (feed.events.length) {
+      setNews((prev) => [...prev, ...feed.events.filter((e) => !prev.some((p) => p.id === e.id))]);
+      if (!firstLoad) notifyHaptic();
+    }
   }, [family.id]);
+
+  function dismissNews() {
+    writeNumber(seenKey(family.id), fetchedUpTo.current ?? 0);
+    setNews([]);
+  }
 
   useEffect(() => {
     setItems(null);
     setMembers([]);
+    setNews([]);
+    fetchedUpTo.current = null;
     refresh();
     // Простой «реалтайм»: опрашиваем сервер, пока приложение на экране.
     const timer = setInterval(() => {
@@ -215,6 +257,8 @@ function ShoppingList({
         )}
       </header>
 
+      {news.length > 0 && <News events={news} onDismiss={dismissNews} />}
+
       <form className="add" onSubmit={add}>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Что купить?" maxLength={120} />
         <input className="qty" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="Кол-во" maxLength={30} />
@@ -284,5 +328,45 @@ function ItemRow({
         ✕
       </button>
     </li>
+  );
+}
+
+const ACTIONS: Record<ListEvent["type"], string> = {
+  added: "добавил(а)",
+  done: "купил(а)",
+  undone: "вернул(а) в список",
+};
+
+function ago(ts: number): string {
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 1) return "только что";
+  if (min < 60) return `${min} мин назад`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} ч назад`;
+  return new Date(ts).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+}
+
+function News({ events, onDismiss }: { events: ListEvent[]; onDismiss: () => void }) {
+  const shown = events.slice(-5).reverse();
+  return (
+    <section className="news" aria-live="polite">
+      <div className="news-head">
+        <strong>Что нового</strong>
+        <button className="link" onClick={onDismiss}>
+          Понятно
+        </button>
+      </div>
+      <ul>
+        {shown.map((e) => (
+          <li key={e.id}>
+            <span className={`dot ${e.type}`} aria-hidden="true" />
+            <span className="text">
+              {e.actor} {ACTIONS[e.type]} «{e.itemTitle}»<span className="meta"> · {ago(e.createdAt)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {events.length > shown.length && <p className="hint small">и ещё {events.length - shown.length}</p>}
+    </section>
   );
 }
