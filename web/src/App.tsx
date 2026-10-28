@@ -76,7 +76,8 @@ function CreateFamily({ onCreated, onCancel }: { onCreated: (id: string) => void
 
   return (
     <form className="onboarding" onSubmit={submit}>
-      <h1>🛒 Список покупок</h1>
+      <div className="logo" aria-hidden="true" />
+      <h1>Список покупок</h1>
       <p className="hint">
         Создайте общий список и отправьте приглашение близким — все будут видеть одни и те же покупки.
       </p>

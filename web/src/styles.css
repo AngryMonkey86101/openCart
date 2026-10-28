@@ -57,6 +57,15 @@ button.secondary { background: var(--secondary-bg); color: var(--link); padding:
 button.link { background: none; color: var(--link); padding: 4px 0; font-size: 14px; }
 button.icon { background: none; color: var(--hint); padding: 8px; }
 
+/* Иконка как маска, чтобы тележка была цвета текста и в светлой, и в тёмной теме. */
+.onboarding .logo {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto;
+  background: var(--text);
+  -webkit-mask: url(/icon.svg) center / contain no-repeat;
+  mask: url(/icon.svg) center / contain no-repeat;
+}
 .onboarding { display: flex; flex-direction: column; gap: 12px; padding-top: 48px; text-align: center; }
 
 .add { display: flex; gap: 8px; margin-bottom: 16px; }
