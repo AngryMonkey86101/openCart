@@ -2,6 +2,10 @@
 interface WebApp {
   initData: string;
   initDataUnsafe: { user?: { id: number; first_name: string }; start_param?: string };
+  colorScheme?: "light" | "dark";
+  setHeaderColor?(color: string): void;
+  setBackgroundColor?(color: string): void;
+  onEvent?(event: "themeChanged", handler: () => void): void;
   ready(): void;
   expand(): void;
   openTelegramLink(url: string): void;
@@ -49,4 +53,25 @@ export function shareLink(url: string, text: string) {
 /** Код приглашения: из ссылки бота (?join=) или из прямой ссылки на Mini App (startapp). */
 export function joinCode(): string | undefined {
   return new URLSearchParams(location.search).get("join") ?? tg?.initDataUnsafe.start_param ?? undefined;
+}
+
+/** Светлая или тёмная палитра (design.md) — по теме Telegram, а вне Telegram — по системе. */
+export function applyTheme() {
+  const apply = () => {
+    const dark = tg?.colorScheme
+      ? tg.colorScheme === "dark"
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const root = document.documentElement;
+    root.dataset.theme = dark ? "dark" : "light";
+    // Шапку и фон самого Telegram красим в цвета приложения, чтобы не было полосы на стыке.
+    const css = getComputedStyle(root);
+    try {
+      tg?.setHeaderColor?.(css.getPropertyValue("--c-header").trim());
+      tg?.setBackgroundColor?.(css.getPropertyValue("--c-bg").trim());
+    } catch {
+      // Старые клиенты Telegram принимают только ключи темы — оставляем их цвета.
+    }
+  };
+  apply();
+  tg?.onEvent?.("themeChanged", apply);
 }

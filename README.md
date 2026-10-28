@@ -7,7 +7,7 @@ Telegram Mini App: один список на всю семью. Создаёт�
 
 | Часть | Где | Что делает |
 |---|---|---|
-| `web/` | React + Vite + TypeScript | Сам Mini App. Цвета берёт из темы Telegram. |
+| `web/` | React + Vite + TypeScript | Сам Mini App. Зелёная тема со светлым и тёмным вариантом, см. [design.md](design.md). |
 | `server/` | Node.js + SQLite (better-sqlite3) | REST API `/api/*`, вебхук бота `/bot/webhook`, раздача собранного `web/dist`. |
 | `Caddyfile`, `docker-compose.yml` | Caddy + Docker | HTTPS-сертификат Let's Encrypt и проксирование на сервер. |
 

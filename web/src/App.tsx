@@ -97,24 +97,30 @@ function CreateFamily({ onCreated, onCancel }: { onCreated: (id: string) => void
   }
 
   return (
-    <form className="onboarding" onSubmit={submit}>
-      <div className="logo" aria-hidden="true" />
-      <h1>Список покупок</h1>
-      <p className="hint">
-        Создайте общий список и отправьте приглашение близким — все будут видеть одни и те же покупки.
-      </p>
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название списка" maxLength={60} />
-      <button type="submit" disabled={busy}>
-        Создать список
-      </button>
-      {onCancel ? (
-        <button type="button" className="link" onClick={onCancel}>
-          Назад к спискам
-        </button>
-      ) : (
-        <p className="hint small">Если вас пригласили, откройте ссылку-приглашение из чата.</p>
-      )}
-    </form>
+    <div className="onboarding">
+      <header className="hero">
+        <div className="logo" aria-hidden="true" />
+        <h1>Список покупок</h1>
+      </header>
+      <main className="sheet">
+        <form onSubmit={submit}>
+          <p className="hint">
+            Создайте общий список и отправьте приглашение близким — все будут видеть одни и те же покупки.
+          </p>
+          <Field label="Название списка" value={name} onChange={setName} maxLength={60} />
+          <button type="submit" className="block" disabled={busy || !name.trim()}>
+            Создать список
+          </button>
+          {onCancel ? (
+            <button type="button" className="link" onClick={onCancel}>
+              Назад к спискам
+            </button>
+          ) : (
+            <p className="hint small">Если вас пригласили, откройте ссылку-приглашение из чата.</p>
+          )}
+        </form>
+      </main>
+    </div>
   );
 }
 
@@ -226,23 +232,26 @@ function ShoppingList({
 
   return (
     <div className="app">
-      <header>
+      <header className="hero">
         <h1 className="list-title">{family.name}</h1>
-        <div className="header-actions">
-          <button className="secondary" onClick={() => setShowMembers((v) => !v)} aria-expanded={showMembers}>
+        <p className="subtitle">{subtitle(items, todo.length)}</p>
+      </header>
+      <main className="sheet">
+        <div className="chips">
+          <button className="chip" onClick={() => setShowMembers((v) => !v)} aria-expanded={showMembers}>
             👥 Участники · {members.length || family.memberCount}
           </button>
-          <button className="secondary" onClick={invite}>
+          <button className="chip" onClick={invite}>
             Пригласить
           </button>
           {notifications.available && (
-            <button className="secondary" onClick={toggleNotifications} aria-pressed={notifications.enabled}>
+            <button className="chip" onClick={toggleNotifications} aria-pressed={notifications.enabled}>
               {notifications.enabled ? "🔔 Оповещения вкл." : "🔕 Оповещения в Telegram"}
             </button>
           )}
           {families.length > 1 && (
             <select
-              className="secondary"
+              className="chip"
               value={family.id}
               onChange={(e) => (e.target.value === "__new" ? onCreateNew() : onSwitch(e.target.value))}
               aria-label="Другой список"
@@ -257,7 +266,7 @@ function ShoppingList({
           )}
         </div>
         {showMembers && (
-          <div className="members">
+          <section className="card members">
             <p className="hint small">Все участники могут добавлять товары и отмечать купленное.</p>
             <ul>
               {members.map((m) => (
@@ -269,28 +278,27 @@ function ShoppingList({
                     {m.firstName}
                     {m.username && <span className="meta"> @{m.username}</span>}
                   </span>
-                  {m.isOwner && <span className="qty-badge">создатель</span>}
+                  {m.isOwner && <span className="pill">создатель</span>}
                 </li>
               ))}
             </ul>
-          </div>
+          </section>
         )}
-      </header>
 
       {news.length > 0 && <News events={news} onDismiss={dismissNews} />}
 
       <form className="add" onSubmit={add}>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Что купить?" maxLength={120} />
-        <input className="qty" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="Кол-во" maxLength={30} />
+        <Field label="Что купить?" value={title} onChange={setTitle} maxLength={120} />
+        <Field label="Кол-во" className="qty" value={qty} onChange={setQty} maxLength={30} />
         <button type="submit" disabled={!title.trim()} aria-label="Добавить">
           +
         </button>
       </form>
 
       {items === null ? (
-        <p className="hint center">Загрузка…</p>
+        <p className="empty">Загрузка…</p>
       ) : items.length === 0 ? (
-        <p className="hint center">Список пуст. Добавьте первый товар.</p>
+        <p className="empty">Список пуст. Добавьте первый товар.</p>
       ) : (
         <>
           <ul className="items">
@@ -321,6 +329,7 @@ function ShoppingList({
           + Создать ещё один список
         </button>
       )}
+      </main>
     </div>
   );
 }
@@ -337,10 +346,10 @@ function ItemRow({
   return (
     <li>
       <label>
-        <input type="checkbox" checked={item.done} onChange={() => onToggle(item)} />
+        <input type="checkbox" className="check" checked={item.done} onChange={() => onToggle(item)} />
         <span className="title">
           {item.title}
-          {item.qty && <span className="qty-badge">{item.qty}</span>}
+          {item.qty && <span className="pill">{item.qty}</span>}
           <span className="meta">{item.done && item.doneBy ? `купил(а) ${item.doneBy}` : item.addedBy}</span>
         </span>
       </label>
@@ -349,6 +358,43 @@ function ItemRow({
       </button>
     </li>
   );
+}
+
+/** Поле с подписью внутри рамки: подпись уменьшается и уходит вверх, когда в поле есть текст. */
+function Field({
+  label,
+  value,
+  onChange,
+  maxLength,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  maxLength?: number;
+  className?: string;
+}) {
+  return (
+    <label className={className ? `field ${className}` : "field"}>
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder=" " maxLength={maxLength} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
+function subtitle(items: Item[] | null, left: number): string {
+  if (items === null) return "Загрузка…";
+  if (items.length === 0) return "Пока ничего не нужно";
+  if (left === 0) return "Всё куплено";
+  return `Осталось купить ${left} ${plural(left, "товар", "товара", "товаров")}`;
 }
 
 const ACTIONS: Record<ListEvent["type"], string> = {
@@ -369,8 +415,8 @@ function ago(ts: number): string {
 function News({ events, onDismiss }: { events: ListEvent[]; onDismiss: () => void }) {
   const shown = events.slice(-5).reverse();
   return (
-    <section className="news" aria-live="polite">
-      <div className="news-head">
+    <section className="card news" aria-live="polite">
+      <div className="card-head">
         <strong>Что нового</strong>
         <button className="link" onClick={onDismiss}>
           Понятно
