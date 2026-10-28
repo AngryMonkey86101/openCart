@@ -1,7 +1,8 @@
 node_modules/
 dist/
-.wrangler/
-.dev.vars
+data/
+.env
 *.log
 .DS_Store
 *.tsbuildinfo
+!.env.example

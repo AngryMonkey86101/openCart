@@ -1,5 +1,6 @@
-import type { Env } from "./env";
-import { callBot, openAppButton } from "./telegram";
+import type { Config } from "./config.js";
+import type { DB } from "./db.js";
+import { callBot, openAppButton } from "./telegram.js";
 
 interface Update {
   message?: {
@@ -9,8 +10,8 @@ interface Update {
   };
 }
 
-export async function handleWebhook(request: Request, env: Env): Promise<Response> {
-  if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
+export async function handleWebhook(request: Request, db: DB, config: Config): Promise<Response> {
+  if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== config.webhookSecret) {
     return new Response("forbidden", { status: 403 });
   }
   const update = (await request.json()) as Update;
@@ -18,32 +19,30 @@ export async function handleWebhook(request: Request, env: Env): Promise<Respons
   if (!msg?.text || !msg.from || msg.chat.type !== "private") return new Response("ok");
 
   // Запоминаем chat_id, чтобы потом можно было присылать уведомления.
-  await env.DB.prepare(
-    `INSERT INTO users (id, first_name, username, chat_id) VALUES (?1, ?2, ?3, ?4)
-     ON CONFLICT(id) DO UPDATE SET first_name = ?2, username = ?3, chat_id = ?4`,
-  )
-    .bind(msg.from.id, msg.from.first_name, msg.from.username ?? null, msg.chat.id)
-    .run();
+  db.prepare(
+    `INSERT INTO users (id, first_name, username, chat_id) VALUES (@id, @name, @username, @chatId)
+     ON CONFLICT(id) DO UPDATE SET first_name = @name, username = @username, chat_id = @chatId`,
+  ).run({ id: msg.from.id, name: msg.from.first_name, username: msg.from.username ?? null, chatId: msg.chat.id });
 
   const [command, payload] = msg.text.trim().split(/\s+/, 2);
   if (command === "/start" && payload) {
-    const family = await env.DB.prepare("SELECT name FROM families WHERE invite_code = ?1")
-      .bind(payload)
-      .first<{ name: string }>();
+    const family = db.prepare("SELECT name FROM families WHERE invite_code = ?").get(payload) as
+      | { name: string }
+      | undefined;
     if (family) {
-      await callBot(env, "sendMessage", {
+      await callBot(config, "sendMessage", {
         chat_id: msg.chat.id,
         text: `Вас пригласили в список «${family.name}». Откройте его, чтобы присоединиться.`,
-        reply_markup: openAppButton(env, "Открыть список", payload),
+        reply_markup: openAppButton(config, "Открыть список", payload),
       });
       return new Response("ok");
     }
   }
 
-  await callBot(env, "sendMessage", {
+  await callBot(config, "sendMessage", {
     chat_id: msg.chat.id,
     text: "Привет! Здесь общий список покупок для всей семьи. Откройте приложение, создайте список и пригласите близких.",
-    reply_markup: openAppButton(env, "Открыть список покупок"),
+    reply_markup: openAppButton(config, "Открыть список покупок"),
   });
   return new Response("ok");
 }

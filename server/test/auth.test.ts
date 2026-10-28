@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { signInitData, validateInitData } from "../src/auth";
+import { signInitData, validateInitData } from "../src/auth.js";
 
 const TOKEN = "123456:TEST-TOKEN";
 const user = JSON.stringify({ id: 42, first_name: "Аня", username: "anya" });
