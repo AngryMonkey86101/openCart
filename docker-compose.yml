@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+
+  # Caddy сам получает и продлевает HTTPS-сертификат Let's Encrypt для DOMAIN.
+  caddy:
+    image: caddy:2.10
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:
