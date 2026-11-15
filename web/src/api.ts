@@ -14,6 +14,16 @@ export interface Notifications {
   enabled: boolean;
 }
 
+/** Ежедневное напоминание об активных списках. */
+export interface Reminder {
+  enabled: boolean;
+  /** Местное время «ЧЧ:ММ». */
+  time: string;
+  /** Дни недели битами: Пн = 1, Вт = 2, … Вс = 64. */
+  days: number;
+  timezone: string;
+}
+
 export interface Member {
   id: number;
   firstName: string;
@@ -54,7 +64,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  me: () => request<{ families: Family[]; notifications: Notifications }>("GET", "/me"),
+  me: () => request<{ families: Family[]; notifications: Notifications; reminder: Reminder }>("GET", "/me"),
+  setReminder: (r: Reminder) => request<Reminder>("POST", "/me/reminder", r),
   setNotifications: (enabled: boolean) => request<{ enabled: boolean }>("POST", "/me/notifications", { enabled }),
   createFamily: (name: string) => request<{ id: string }>("POST", "/families", { name }),
   joinFamily: (code: string) => request<{ id: string }>("POST", "/families/join", { code }),

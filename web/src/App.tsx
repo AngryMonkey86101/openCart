@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { InviteQr } from "./InviteQr";
-import { api, type Family, type Item, type ListEvent, type Member, type Notifications } from "./api";
+import { api, type Family, type Item, type ListEvent, type Member, type Notifications, type Reminder } from "./api";
+import { ReminderCard, reminderChip } from "./Reminder";
 import { confirm, haptic, joinCode, notifyHaptic, requestWriteAccess, tg } from "./telegram";
 
 const POLL_MS = 4000;
@@ -28,12 +29,14 @@ export function App() {
   const [families, setFamilies] = useState<Family[] | null>(null);
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notifications>({ available: false, enabled: false });
+  const [reminder, setReminder] = useState<Reminder | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadFamilies = useCallback(async (prefer?: string) => {
-    const { families, notifications } = await api.me();
+    const { families, notifications, reminder } = await api.me();
     setFamilies(families);
     setNotifications(notifications);
+    setReminder(reminder);
     const saved = prefer ?? localStorage.getItem(LAST_FAMILY_KEY);
     setFamilyId(families.find((f) => f.id === saved)?.id ?? families[0]?.id ?? null);
   }, []);
@@ -78,6 +81,8 @@ export function App() {
       onCreateNew={() => setFamilyId(null)}
       notifications={notifications}
       onNotificationsChange={setNotifications}
+      reminder={reminder}
+      onReminderChange={setReminder}
     />
   );
 }
@@ -132,6 +137,8 @@ function ShoppingList({
   onCreateNew,
   notifications,
   onNotificationsChange,
+  reminder,
+  onReminderChange,
 }: {
   family: Family;
   families: Family[];
@@ -139,11 +146,14 @@ function ShoppingList({
   onCreateNew: () => void;
   notifications: Notifications;
   onNotificationsChange: (n: Notifications) => void;
+  reminder: Reminder | null;
+  onReminderChange: (r: Reminder) => void;
 }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showReminder, setShowReminder] = useState(false);
   const closeInvite = useCallback(() => setShowInvite(false), []);
   const [news, setNews] = useState<ListEvent[]>([]);
   // Последнее событие, уже полученное с сервера; null — ещё не загружали.
@@ -248,6 +258,11 @@ function ShoppingList({
               {notifications.enabled ? "🔔 Оповещения вкл." : "🔕 Оповещения в Telegram"}
             </button>
           )}
+          {notifications.available && reminder && (
+            <button className="chip" onClick={() => setShowReminder((v) => !v)} aria-expanded={showReminder}>
+              {reminder.enabled ? reminderChip(reminder.time, reminder.days) : "⏰ Напоминание"}
+            </button>
+          )}
           {families.length > 1 && (
             <select
               className="chip"
@@ -264,6 +279,7 @@ function ShoppingList({
             </select>
           )}
         </div>
+        {showReminder && reminder && <ReminderCard value={reminder} onChange={onReminderChange} />}
         {showMembers && (
           <section className="card members">
             <p className="hint small">Все участники могут добавлять товары и отмечать купленное.</p>

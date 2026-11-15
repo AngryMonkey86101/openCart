@@ -3,6 +3,7 @@ import { validateInitData, type TelegramUser } from "./auth.js";
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
 import type { EventType, Notifier } from "./notifier.js";
+import { DEFAULT_TIMEZONE, isValidTime, isValidTimezone } from "./reminders.js";
 import { inviteLink } from "./telegram.js";
 
 interface Ctx {
@@ -102,12 +103,36 @@ async function route(request: Request, ctx: Ctx, user: TelegramUser): Promise<Re
 
   // GET /api/me
   if (method === "GET" && parts[0] === "me" && parts.length === 1) {
-    const notify = db.prepare("SELECT notify FROM users WHERE id = ?").pluck().get(user.id) as number;
+    const row = db
+      .prepare("SELECT notify, remind, remind_time, remind_days, timezone FROM users WHERE id = ?")
+      .get(user.id) as { notify: number; remind: number; remind_time: string; remind_days: number; timezone: string | null };
     return json({
       user,
       families: listFamilies(db, config, user.id),
-      notifications: { available: notifier.enabled, enabled: Boolean(notify) },
+      notifications: { available: notifier.enabled, enabled: Boolean(row.notify) },
+      reminder: {
+        enabled: Boolean(row.remind),
+        time: row.remind_time,
+        days: row.remind_days,
+        timezone: row.timezone ?? DEFAULT_TIMEZONE,
+      },
     });
+  }
+
+  // POST /api/me/reminder  { enabled, time: "ЧЧ:ММ", days: 1..127, timezone } — напоминание об активных списках
+  if (method === "POST" && parts[0] === "me" && parts[1] === "reminder") {
+    const body = await readBody<{ enabled?: unknown; time?: unknown; days?: unknown; timezone?: unknown }>(request);
+    if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled must be boolean");
+    if (!isValidTime(body.time)) throw new HttpError(400, "time must be HH:MM");
+    if (!Number.isInteger(body.days) || (body.days as number) < 1 || (body.days as number) > 127) {
+      throw new HttpError(400, "days must be 1..127");
+    }
+    if (!isValidTimezone(body.timezone)) throw new HttpError(400, "invalid timezone");
+    // Сброс reminded_on: после смены времени напоминание может прийти уже сегодня.
+    db.prepare(
+      "UPDATE users SET remind = ?, remind_time = ?, remind_days = ?, timezone = ?, reminded_on = NULL WHERE id = ?",
+    ).run(body.enabled ? 1 : 0, body.time, body.days, body.timezone, user.id);
+    return json({ enabled: body.enabled, time: body.time, days: body.days, timezone: body.timezone });
   }
 
   // POST /api/me/notifications  { enabled } — оповещения сообщениями в Telegram

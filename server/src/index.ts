@@ -4,12 +4,15 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { openDatabase } from "./db.js";
 import { Notifier } from "./notifier.js";
+import { Reminders } from "./reminders.js";
 import { setupBot } from "./telegram.js";
 
 const config = loadConfig();
 const db = openDatabase(config.databasePath);
 const notifier = new Notifier(db, config);
 const app = createApp(db, config, notifier);
+const reminders = new Reminders(db, notifier);
+reminders.start();
 
 function toRequest(req: IncomingMessage): Request {
   const url = `http://${req.headers.host ?? "localhost"}${req.url ?? "/"}`;
@@ -53,6 +56,7 @@ server.listen(config.port, () => {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () =>
     server.close(async () => {
+      reminders.stop();
       await notifier.flushAll();
       db.close();
       process.exit(0);

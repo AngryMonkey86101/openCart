@@ -65,9 +65,7 @@ export class Notifier {
       .pluck()
       .all(familyId) as number[];
 
-    const button = this.config.botAppName
-      ? { inline_keyboard: [[{ text: "Открыть список", url: `https://t.me/${this.config.botUsername}/${this.config.botAppName}` }]] }
-      : undefined;
+    const button = this.openButton();
     const messages = recipients.flatMap((chatId) => {
       // Свои действия человеку не присылаем.
       const lines = entry.events.filter((e) => e.actorId !== chatId).map((e) => `${e.actorName} ${ACTIONS[e.type]} «${e.itemTitle}»`);
@@ -78,6 +76,19 @@ export class Notifier {
       console.log(`Оповещения для «${family.name}»: некому отправлять (никто, кроме автора, не включил оповещения)`);
       return;
     }
+    await this.deliver(messages);
+  }
+
+  /** Кнопка под сообщением, открывающая Mini App (если задан BOT_APP_NAME). */
+  openButton() {
+    return this.config.botAppName
+      ? { inline_keyboard: [[{ text: "Открыть список", url: `https://t.me/${this.config.botUsername}/${this.config.botAppName}` }]] }
+      : undefined;
+  }
+
+  /** Отправляет готовые сообщения через посредника; ошибки только пишет в лог. */
+  async deliver(messages: unknown[]): Promise<void> {
+    if (!this.enabled || !messages.length) return;
     try {
       await this.send(messages);
     } catch (err) {
