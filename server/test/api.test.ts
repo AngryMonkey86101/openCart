@@ -121,6 +121,57 @@ describe("API списка покупок", () => {
     ]);
   });
 
+  it("переименовать список может любой участник, остальные видят новое название и событие", async () => {
+    const { data: created } = await call(mom, "POST", "/api/families", { name: "Дом" });
+    const { data: me } = await call(mom, "GET", "/api/me");
+    await call(dad, "POST", "/api/families/join", { code: me.families[0].inviteCode });
+
+    expect((await call(dad, "PATCH", `/api/families/${created.id}`, { name: "   " })).status).toBe(400);
+    expect((await call(await auth(3, "Чужой"), "PATCH", `/api/families/${created.id}`, { name: "Моё" })).status).toBe(404);
+    const renamed = await call(dad, "PATCH", `/api/families/${created.id}`, { name: "  Дача  " });
+    expect(renamed.data).toEqual({ id: created.id, name: "Дача" });
+    await call(dad, "PATCH", `/api/families/${created.id}`, { name: "Дача" }); // без изменений событие не пишется
+
+    expect((await call(mom, "GET", `/api/families/${created.id}/items`)).data.name).toBe("Дача");
+    expect((await call(mom, "GET", "/api/me")).data.families[0]).toMatchObject({ name: "Дача", isOwner: true });
+    expect((await call(dad, "GET", "/api/me")).data.families[0]).toMatchObject({ name: "Дача", isOwner: false });
+    const { data: forMom } = await call(mom, "GET", `/api/families/${created.id}/events?after=0`);
+    expect(forMom.events).toMatchObject([{ type: "renamed", actor: "Папа", itemTitle: "Дача" }]);
+  });
+
+  it("удалить список может только создатель, участник может выйти", async () => {
+    const relayConfig = { ...config, notifyRelayUrl: "https://relay.test", notifyRelaySecret: "x" };
+    const db = openDatabase(":memory:");
+    const sent: any[] = [];
+    const notifier = new Notifier(db, relayConfig, 60_000, async (messages) => void sent.push(...messages));
+    app = createApp(db, relayConfig, notifier);
+
+    const { data: created } = await call(mom, "POST", "/api/families", { name: "Дом" });
+    const { data: me } = await call(mom, "GET", "/api/me");
+    await call(dad, "POST", "/api/families/join", { code: me.families[0].inviteCode });
+    await call(dad, "POST", "/api/me/notifications", { enabled: true });
+    await call(mom, "POST", `/api/families/${created.id}/items`, { title: "Молоко" });
+
+    expect((await call(dad, "DELETE", `/api/families/${created.id}`)).status).toBe(403);
+    expect((await call(await auth(3, "Чужой"), "DELETE", `/api/families/${created.id}`)).status).toBe(404);
+    expect((await call(mom, "POST", `/api/families/${created.id}/leave`)).status).toBe(409);
+
+    expect((await call(mom, "DELETE", `/api/families/${created.id}`)).status).toBe(200);
+    await notifier.flushAll(); // накопленное «добавила Молоко» по удалённому списку не уходит
+    expect(sent).toEqual([{ chat_id: 2, text: "🗑 Мама удалил(а) список «Дом»" }]);
+    // У папы список пропал: опрос получает 404, и приложение возвращается к другим спискам.
+    expect((await call(dad, "GET", `/api/families/${created.id}/items`)).status).toBe(404);
+    expect((await call(dad, "GET", "/api/me")).data.families).toEqual([]);
+    expect(db.prepare("SELECT COUNT(*) FROM items").pluck().get()).toBe(0);
+
+    const { data: other } = await call(mom, "POST", "/api/families", { name: "Работа" });
+    const code = (await call(mom, "GET", "/api/me")).data.families[0].inviteCode;
+    await call(dad, "POST", "/api/families/join", { code });
+    expect((await call(dad, "POST", `/api/families/${other.id}/leave`)).status).toBe(200);
+    expect((await call(dad, "GET", "/api/me")).data.families).toEqual([]);
+    expect((await call(mom, "GET", `/api/families/${other.id}/members`)).data.members).toHaveLength(1);
+  });
+
   it("чужой товар нельзя удалить", async () => {
     const { data: created } = await call(mom, "POST", "/api/families", { name: "Дом" });
     const { data: item } = await call(mom, "POST", `/api/families/${created.id}/items`, { title: "Хлеб" });

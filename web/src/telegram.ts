@@ -10,6 +10,15 @@ interface WebApp {
   expand(): void;
   openTelegramLink(url: string): void;
   showConfirm(message: string, callback: (ok: boolean) => void): void;
+  showPopup?(
+    params: {
+      title?: string;
+      message: string;
+      buttons?: { id?: string; type?: "default" | "ok" | "close" | "cancel" | "destructive"; text?: string }[];
+    },
+    callback?: (buttonId: string) => void,
+  ): void;
+  isVersionAtLeast?(version: string): boolean;
   requestWriteAccess?(callback: (allowed: boolean) => void): void;
   BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   HapticFeedback?: {
@@ -43,6 +52,29 @@ export function requestWriteAccess(): Promise<boolean> {
 export function confirm(message: string): Promise<boolean> {
   if (!tg?.initData) return Promise.resolve(window.confirm(message));
   return new Promise((resolve) => tg.showConfirm(message, resolve));
+}
+
+/**
+ * Подтверждение необратимого действия: системное окно Telegram с красной кнопкой
+ * (showPopup, Bot API 6.2+), в старых клиентах — обычный showConfirm.
+ */
+export function confirmDestructive(title: string, message: string, action: string): Promise<boolean> {
+  if (!tg?.initData) return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  if (!tg.showPopup || !tg.isVersionAtLeast?.("6.2")) return confirm(`${title}\n\n${message}`);
+  tg.HapticFeedback?.notificationOccurred("warning");
+  return new Promise((resolve) =>
+    tg.showPopup!(
+      {
+        title: title.slice(0, 64),
+        message: message.slice(0, 256),
+        buttons: [
+          { id: "ok", type: "destructive", text: action },
+          { id: "cancel", type: "cancel" },
+        ],
+      },
+      (id) => resolve(id === "ok"),
+    ),
+  );
 }
 
 export function shareLink(url: string, text: string) {
