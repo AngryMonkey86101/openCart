@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { InviteQr } from "./InviteQr";
-import { api, type Family, type Item, type ListEvent, type Member, type Notifications, type Reminder } from "./api";
+import { ListSettings } from "./ListSettings";
+import { api, ApiError, type Family, type Item, type ListEvent, type Member, type Notifications, type Reminder } from "./api";
 import { ReminderCard, reminderChip } from "./Reminder";
 import { confirm, haptic, joinCode, notifyHaptic, requestWriteAccess, tg } from "./telegram";
 
@@ -31,6 +32,7 @@ export function App() {
   const [notifications, setNotifications] = useState<Notifications>({ available: false, enabled: false });
   const [reminder, setReminder] = useState<Reminder | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const loadFamilies = useCallback(async (prefer?: string) => {
     const { families, notifications, reminder } = await api.me();
@@ -57,6 +59,33 @@ export function App() {
     if (familyId) localStorage.setItem(LAST_FAMILY_KEY, familyId);
   }, [familyId]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const renameFamily = useCallback((id: string, name: string) => {
+    setFamilies((prev) => prev?.map((f) => (f.id === id ? { ...f, name } : f)) ?? prev);
+  }, []);
+
+  /** Список пропал: удалён (здесь или другим участником) или пользователь из него вышел. */
+  const removeFamily = useCallback(
+    async (family: Family, message: string) => {
+      try {
+        localStorage.removeItem(seenKey(family.id));
+      } catch {
+        // Хранилище недоступно — не страшно.
+      }
+      const rest = families?.filter((f) => f.id !== family.id) ?? [];
+      setFamilies(rest);
+      setFamilyId(rest[0]?.id ?? null);
+      setToast(message);
+      await loadFamilies().catch(() => {});
+    },
+    [families, loadFamilies],
+  );
+
   if (!tg?.initData) {
     return <div className="center">Откройте это приложение через бота в Telegram.</div>;
   }
@@ -64,26 +93,33 @@ export function App() {
   if (!families) return <div className="center hint">Загрузка…</div>;
 
   const family = families.find((f) => f.id === familyId);
-  if (!family) {
-    return (
-      <CreateFamily
-        onCreated={(id) => loadFamilies(id)}
-        onCancel={families.length ? () => setFamilyId(families[0].id) : undefined}
-      />
-    );
-  }
-
   return (
-    <ShoppingList
-      family={family}
-      families={families}
-      onSwitch={setFamilyId}
-      onCreateNew={() => setFamilyId(null)}
-      notifications={notifications}
-      onNotificationsChange={setNotifications}
-      reminder={reminder}
-      onReminderChange={setReminder}
-    />
+    <>
+      {family ? (
+        <ShoppingList
+          family={family}
+          families={families}
+          onSwitch={setFamilyId}
+          onCreateNew={() => setFamilyId(null)}
+          onRenamed={renameFamily}
+          onRemoved={removeFamily}
+          notifications={notifications}
+          onNotificationsChange={setNotifications}
+          reminder={reminder}
+          onReminderChange={setReminder}
+        />
+      ) : (
+        <CreateFamily
+          onCreated={(id) => loadFamilies(id)}
+          onCancel={families.length ? () => setFamilyId(families[0].id) : undefined}
+        />
+      )}
+      {toast && (
+        <div className="toast" role="status" onClick={() => setToast(null)}>
+          {toast}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -135,6 +171,8 @@ function ShoppingList({
   families,
   onSwitch,
   onCreateNew,
+  onRenamed,
+  onRemoved,
   notifications,
   onNotificationsChange,
   reminder,
@@ -144,6 +182,8 @@ function ShoppingList({
   families: Family[];
   onSwitch: (id: string) => void;
   onCreateNew: () => void;
+  onRenamed: (id: string, name: string) => void;
+  onRemoved: (family: Family, message: string) => void;
   notifications: Notifications;
   onNotificationsChange: (n: Notifications) => void;
   reminder: Reminder | null;
@@ -154,6 +194,17 @@ function ShoppingList({
   const [showMembers, setShowMembers] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  // Актуальные значения для опроса без перезапуска таймера при каждом изменении.
+  const latest = useRef({ family, onRenamed, onRemoved });
+  latest.current = { family, onRenamed, onRemoved };
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const closeInvite = useCallback(() => setShowInvite(false), []);
   const [news, setNews] = useState<ListEvent[]>([]);
   // Последнее событие, уже полученное с сервера; null — ещё не загружали.
@@ -164,11 +215,21 @@ function ShoppingList({
   const refresh = useCallback(async () => {
     const firstLoad = fetchedUpTo.current === null;
     const after = fetchedUpTo.current ?? readNumber(seenKey(family.id));
-    const [{ items }, { members }, feed] = await Promise.all([
-      api.items(family.id),
-      api.members(family.id),
-      api.events(family.id, after ?? 0),
-    ]);
+    let data;
+    try {
+      data = await Promise.all([api.items(family.id), api.members(family.id), api.events(family.id, after ?? 0)]);
+    } catch (e) {
+      // 404 — списка больше нет: его удалил создатель или мы из него вышли на другом устройстве.
+      if (e instanceof ApiError && e.status === 404) {
+        const { family: current, onRemoved } = latest.current;
+        if (mounted.current && current.id === family.id) onRemoved(current, `Список «${current.name}» удалён`);
+        return;
+      }
+      throw e;
+    }
+    const [{ name, items }, { members }, feed] = data;
+    // Кто-то из участников переименовал список.
+    if (name && name !== latest.current.family.name) latest.current.onRenamed(family.id, name);
     setItems(items);
     setMembers(members);
     fetchedUpTo.current = Math.max(feed.lastId, after ?? 0);
@@ -190,8 +251,9 @@ function ShoppingList({
     setItems(null);
     setMembers([]);
     setNews([]);
+    setShowSettings(false);
     fetchedUpTo.current = null;
-    refresh();
+    refresh().catch(() => {});
     // Простой «реалтайм»: опрашиваем сервер, пока приложение на экране.
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") refresh().catch(() => {});
@@ -263,6 +325,9 @@ function ShoppingList({
               {reminder.enabled ? reminderChip(reminder.time, reminder.days) : "⏰ Напоминание"}
             </button>
           )}
+          <button className="chip" onClick={() => setShowSettings((v) => !v)} aria-expanded={showSettings}>
+            ⚙️ Настройки
+          </button>
           {families.length > 1 && (
             <select
               className="chip"
@@ -280,6 +345,21 @@ function ShoppingList({
           )}
         </div>
         {showReminder && reminder && <ReminderCard value={reminder} onChange={onReminderChange} />}
+        {showSettings && (
+          <ListSettings
+            key={family.id}
+            family={family}
+            members={members}
+            itemCount={items?.length ?? 0}
+            onRenamed={(name) => {
+              onRenamed(family.id, name);
+              setShowSettings(false);
+            }}
+            onRemoved={(how) =>
+              onRemoved(family, how === "deleted" ? `Список «${family.name}» удалён` : `Вы вышли из списка «${family.name}»`)
+            }
+          />
+        )}
         {showMembers && (
           <section className="card members">
             <p className="hint small">Все участники могут добавлять товары и отмечать купленное.</p>
@@ -417,6 +497,7 @@ const ACTIONS: Record<ListEvent["type"], string> = {
   added: "добавил(а)",
   done: "купил(а)",
   undone: "вернул(а) в список",
+  renamed: "переименовал(а) список в",
 };
 
 function ago(ts: number): string {

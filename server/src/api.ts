@@ -60,6 +60,10 @@ function requireMember(db: DB, familyId: string, userId: number) {
   if (!row) throw new HttpError(404, "list not found");
 }
 
+function familyOwner(db: DB, familyId: string): number {
+  return db.prepare("SELECT created_by FROM families WHERE id = ?").pluck().get(familyId) as number;
+}
+
 function itemFamily(db: DB, itemId: number): string {
   const row = db.prepare("SELECT family_id FROM items WHERE id = ?").get(itemId) as { family_id: string } | undefined;
   if (!row) throw new HttpError(404, "item not found");
@@ -86,13 +90,13 @@ function logEvent(ctx: Ctx, familyId: string, actor: TelegramUser, type: EventTy
 function listFamilies(db: DB, config: Config, userId: number) {
   const rows = db
     .prepare(
-      `SELECT f.id, f.name, f.invite_code AS inviteCode,
+      `SELECT f.id, f.name, f.invite_code AS inviteCode, f.created_by = m.user_id AS isOwner,
               (SELECT COUNT(*) FROM members m2 WHERE m2.family_id = f.id) AS memberCount
          FROM families f JOIN members m ON m.family_id = f.id
         WHERE m.user_id = ? ORDER BY m.joined_at`,
     )
-    .all(userId) as { id: string; name: string; inviteCode: string; memberCount: number }[];
-  return rows.map((f) => ({ ...f, inviteLink: inviteLink(config, f.inviteCode) }));
+    .all(userId) as { id: string; name: string; inviteCode: string; isOwner: number; memberCount: number }[];
+  return rows.map((f) => ({ ...f, isOwner: Boolean(f.isOwner), inviteLink: inviteLink(config, f.inviteCode) }));
 }
 
 async function route(request: Request, ctx: Ctx, user: TelegramUser): Promise<Response> {
@@ -178,6 +182,49 @@ async function route(request: Request, ctx: Ctx, user: TelegramUser): Promise<Re
     return json({ id: family.id });
   }
 
+  // PATCH /api/families/:id  { name } — переименовать список может любой участник
+  if (method === "PATCH" && parts[0] === "families" && parts[1] && parts.length === 2) {
+    requireMember(db, parts[1], user.id);
+    const body = await readBody<{ name?: unknown }>(request);
+    const name = cleanText(body.name, 60);
+    if (!name) throw new HttpError(400, "name is required");
+    const before = db.prepare("SELECT name FROM families WHERE id = ?").pluck().get(parts[1]) as string;
+    if (name !== before) {
+      db.prepare("UPDATE families SET name = ? WHERE id = ?").run(name, parts[1]);
+      logEvent(ctx, parts[1], user, "renamed", name);
+    }
+    return json({ id: parts[1], name });
+  }
+
+  // DELETE /api/families/:id — удалить список со всеми товарами может только создатель
+  if (method === "DELETE" && parts[0] === "families" && parts[1] && parts.length === 2) {
+    const familyId = parts[1];
+    requireMember(db, familyId, user.id);
+    if (familyOwner(db, familyId) !== user.id) throw new HttpError(403, "only the owner can delete the list");
+    const name = db.prepare("SELECT name FROM families WHERE id = ?").pluck().get(familyId) as string;
+    const recipients = db
+      .prepare(
+        "SELECT u.id FROM members m JOIN users u ON u.id = m.user_id WHERE m.family_id = ? AND u.notify = 1 AND u.id != ?",
+      )
+      .pluck()
+      .all(familyId, user.id) as number[];
+    // Участники, товары и события удаляются каскадом.
+    db.prepare("DELETE FROM families WHERE id = ?").run(familyId);
+    notifier.drop(familyId);
+    void notifier.deliver(
+      recipients.map((chatId) => ({ chat_id: chatId, text: `🗑 ${user.first_name} удалил(а) список «${name}»` })),
+    );
+    return json({ ok: true });
+  }
+
+  // POST /api/families/:id/leave — выйти из чужого списка; создатель вместо этого удаляет список
+  if (method === "POST" && parts[0] === "families" && parts[2] === "leave") {
+    requireMember(db, parts[1], user.id);
+    if (familyOwner(db, parts[1]) === user.id) throw new HttpError(409, "the owner cannot leave, delete the list instead");
+    db.prepare("DELETE FROM members WHERE family_id = ? AND user_id = ?").run(parts[1], user.id);
+    return json({ ok: true });
+  }
+
   // GET /api/families/:id/members — все участники могут отмечать покупки
   if (method === "GET" && parts[0] === "families" && parts[2] === "members") {
     requireMember(db, parts[1], user.id);
@@ -225,7 +272,9 @@ async function route(request: Request, ctx: Ctx, user: TelegramUser): Promise<Re
           ORDER BY i.done, i.created_at DESC`,
       )
       .all(parts[1]) as { done: number }[];
-    return json({ items: rows.map((r) => ({ ...r, done: Boolean(r.done) })) });
+    // Название отдаём вместе с товарами: так переименование доходит до остальных при обычном опросе.
+    const name = db.prepare("SELECT name FROM families WHERE id = ?").pluck().get(parts[1]) as string;
+    return json({ name, items: rows.map((r) => ({ ...r, done: Boolean(r.done) })) });
   }
 
   // POST /api/families/:id/items  { title, qty? }
